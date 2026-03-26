@@ -1,5 +1,5 @@
 name: Build
-on: [ pull_request, push, workflow_dispatch ]
+on: [ pull_request, push, workflow_dispatch, workflow_call ]
 
 jobs:
   build:
@@ -8,6 +8,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@main
+        with:
+          repository: Hong-Kong-Public-Transport/Bus-Destination-Display-Processor
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@main
       - name: Setup JDK 21
@@ -19,9 +21,9 @@ jobs:
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Build JAR
-        run: ./gradlew build --no-daemon
+        run: ./gradlew shadowJar --no-daemon
       - name: Upload JAR
         uses: actions/upload-artifact@main
         with:
           name: Artifact
-          path: build/libs/Bus-Destination-Display-Processor-*.jar
+          path: build/libs/Bus-Destination-Display-Processor-*-all.jar
