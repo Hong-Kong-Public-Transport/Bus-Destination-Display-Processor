@@ -1,0 +1,23 @@
+plugins {
+	id "java"
+}
+
+group = "org.transport"
+
+java {
+	toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation "it.unimi.dsi:fastutil:+"
+	implementation "org.apache.commons:commons-io:+"
+	implementation "org.jspecify:jspecify:+"
+	implementation "org.openpnp:opencv:+"
+	implementation "org.jsoup:jsoup:+"
+	compileOnly "org.projectlombok:lombok:+"
+	annotationProcessor "org.projectlombok:lombok:+"
+}
