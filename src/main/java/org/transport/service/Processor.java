@@ -4,7 +4,6 @@ import it.unimi.dsi.fastutil.ints.Int2LongMap;
 import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.AllArgsConstructor;
 import org.opencv.core.*;
@@ -13,28 +12,62 @@ import org.opencv.imgproc.Imgproc;
 import org.transport.entity.Display;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.function.Consumer;
 
 @AllArgsConstructor
 public final class Processor {
 
 	private final ObjectArrayList<String> groups;
-	private final byte[] imageBytes;
+	private final String source;
 	private final Path outputDirectory;
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
-	private static final Object2IntOpenHashMap<String> EXISTING_FILES = new Object2IntOpenHashMap<>();
+	private static final String FILE_FORMAT = ".png";
+	private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(10)).build();
 
 	/**
 	 * Using the raw image bytes of an image of an LED dot matrix, convert it to a black and white byte array representing which LEDs are on.
 	 */
-	public Display process() {
-		final Mat image = getImage(imageBytes);
+	public void process(Consumer<Display> callback) {
+		getGoogleDriveImage(bytes -> {
+			final Mat image = getImage(bytes);
+
+			try {
+				callback.accept(getResult(image, estimatePitch(image, false), estimatePitch(image, true)));
+			} finally {
+				image.release();
+			}
+		});
+	}
+
+	private void getGoogleDriveImage(Consumer<byte[]> callback) {
 		try {
-			return getResult(image, estimatePitch(image, false), estimatePitch(image, true));
-		} finally {
-			image.release();
+			final HttpResponse<byte[]> httpResponse = HTTP_CLIENT.send(
+					HttpRequest.newBuilder().uri(URI.create(String.format("https://lh3.googleusercontent.com/d/%s", source))).timeout(Duration.ofSeconds(20)).GET().build(),
+					HttpResponse.BodyHandlers.ofByteArray()
+			);
+
+			if (httpResponse.statusCode() == 200) {
+				callback.accept(httpResponse.body());
+			} else {
+				System.err.printf("HTTP %d for [%s]%n", httpResponse.statusCode(), source);
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			System.err.println(e.getMessage());
+		} catch (IOException e) {
+			System.err.println(e.getMessage());
 		}
 	}
 
@@ -46,64 +79,70 @@ public final class Processor {
 	 */
 	private Display getResult(Mat image, int pitchX, int pitchY) {
 		final Mat binary = new Mat();
-		Imgproc.threshold(image, binary, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
-
 		final Mat integral = new Mat();
-		Imgproc.integral(binary, integral, CvType.CV_32S);
-
 		final int rawWidth = image.width();
 		final int rawHeight = image.height();
 		final int newPitchX = Math.max(1, pitchX);
 		final int newPitchY = Math.max(1, pitchY);
 		final int width = Math.ceilDiv(rawWidth, newPitchX);
 		final int height = Math.ceilDiv(rawHeight, newPitchY);
-
 		final Mat output = new Mat(height, width, CvType.CV_8U);
-		final int[] pixels = new int[width * height];
-		final IntOpenHashSet values = new IntOpenHashSet();
+		final MatOfByte matOfByte = new MatOfByte();
 
-		for (int x = 0; x < width; x++) {
-			for (int y = 0; y < height; y++) {
-				final int x1 = x * newPitchX;
-				final int x2 = Math.min((x + 1) * newPitchX, rawWidth - 1);
-				final int y1 = y * newPitchY;
-				final int y2 = Math.min((y + 1) * newPitchY, rawHeight - 1);
-				final int value = getRectangleSum(integral, x1 + 1, y1 + 1, x2 + 1, y2 + 1);
-				values.add(value);
-				pixels[x + y * width] = value;
-			}
-		}
+		try {
+			Imgproc.threshold(image, binary, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
+			Imgproc.integral(binary, integral, CvType.CV_32S);
+			final int[] pixels = new int[width * height];
+			final IntOpenHashSet values = new IntOpenHashSet();
 
-		binary.release();
-		integral.release();
-		final int threshold = getMedian(new IntArrayList(values));
-		final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-
-		for (int i = 0; i < pixels.length; i += 8) {
-			int data = 0;
-			for (int j = 0; j < 8; j++) {
-				if (i + j < pixels.length) {
-					data |= (pixels[i + j] >= threshold ? 0x80 : 0) >> j;
-					output.put((i + j) / width, (i + j) % width, pixels[i + j] >= threshold ? 0xFF : 0);
+			for (int x = 0; x < width; x++) {
+				for (int y = 0; y < height; y++) {
+					final int x1 = x * newPitchX;
+					final int x2 = Math.min((x + 1) * newPitchX, rawWidth - 1);
+					final int y1 = y * newPitchY;
+					final int y2 = Math.min((y + 1) * newPitchY, rawHeight - 1);
+					final int value = getRectangleSum(integral, x1 + 1, y1 + 1, x2 + 1, y2 + 1);
+					values.add(value);
+					pixels[x + y * width] = value;
 				}
 			}
-			byteArrayOutputStream.write(data);
+
+			final int threshold = getMedian(new IntArrayList(values));
+			final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+			for (int i = 0; i < pixels.length; i += 8) {
+				int data = 0;
+				for (int j = 0; j < 8; j++) {
+					if (i + j < pixels.length) {
+						data |= (pixels[i + j] >= threshold ? 0x80 : 0) >> j;
+						output.put((i + j) / width, (i + j) % width, pixels[i + j] >= threshold ? 0xFF : 0);
+					}
+				}
+				byteArrayOutputStream.write(data);
+			}
+
+			final StringBuilder stringBuilder = new StringBuilder();
+			for (int i = 0; i < Math.min(groups.size(), 2); i++) {
+				stringBuilder.append(groups.get(i).toUpperCase()).append("_");
+			}
+
+			stringBuilder.append(source.toLowerCase().replace("_", ""));
+			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
+			final Path outputPath = outputDirectory.resolve(cleanString(stringBuilder.toString()) + FILE_FORMAT);
+			final byte[] bytes = matOfByte.toArray();
+			if (!Files.exists(outputPath) || !Arrays.equals(bytes, Files.readAllBytes(outputPath))) {
+				Files.write(outputPath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+			}
+
+			return new Display(groups, width, height, byteArrayOutputStream.toByteArray());
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		} finally {
+			binary.release();
+			integral.release();
+			output.release();
+			matOfByte.release();
 		}
-
-		final ObjectArrayList<String> fileNameParts = new ObjectArrayList<>();
-		for (int i = 0; i < Math.min(groups.size(), 2); i++) {
-			fileNameParts.add(groups.get(i));
-		}
-
-		final String tempFileName = String.join("_", fileNameParts);
-		final int index = EXISTING_FILES.computeIfAbsent(tempFileName, key -> 1);
-		fileNameParts.add(String.valueOf(index));
-		EXISTING_FILES.put(tempFileName, index + 1);
-
-		Imgcodecs.imwrite(String.format("%s/%s.png", outputDirectory, String.join("_", fileNameParts)), output);
-		output.release();
-
-		return new Display(groups, width, height, byteArrayOutputStream.toByteArray());
 	}
 
 	/**
@@ -112,19 +151,25 @@ public final class Processor {
 	 */
 	private static Mat getImage(byte[] imageBytes) {
 		final MatOfByte matOfByte = new MatOfByte(imageBytes);
-		Mat imageBGR = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR);
-		matOfByte.release();
 
-		final Mat imageHSV = new Mat();
-		Imgproc.cvtColor(imageBGR, imageHSV, Imgproc.COLOR_BGR2HSV);
-		imageBGR.release();
+		try {
+			Mat imageBGR = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR);
+			final Mat imageHSV = new Mat();
+			final Mat grayscaleImage = new Mat();
 
-		final Mat grayscaleImage = new Mat();
-		Core.extractChannel(imageHSV, grayscaleImage, 2);
-		final Mat croppedImage = new Mat(grayscaleImage, getCropRange(grayscaleImage, false), getCropRange(grayscaleImage, true)).clone();
-		imageHSV.release();
-		grayscaleImage.release();
-		return croppedImage;
+			try {
+				Imgproc.cvtColor(imageBGR, imageHSV, Imgproc.COLOR_BGR2HSV);
+
+				Core.extractChannel(imageHSV, grayscaleImage, 2);
+				return new Mat(grayscaleImage, getCropRange(grayscaleImage, false), getCropRange(grayscaleImage, true)).clone();
+			} finally {
+				imageBGR.release();
+				imageHSV.release();
+				grayscaleImage.release();
+			}
+		} finally {
+			matOfByte.release();
+		}
 	}
 
 	/**
@@ -140,23 +185,27 @@ public final class Processor {
 				axis ? new Range((int) Math.floor(height * 0.4), (int) Math.ceil(height * 0.6) + 1) : Range.all(),
 				axis ? Range.all() : new Range((int) Math.floor(width * 0.4), (int) Math.ceil(width * 0.6) + 1)
 		);
-		final double[] projection = getProjection(croppedImage, !axis);
-		croppedImage.release();
 
-		int start = -1;
-		int end = -1;
+		try {
+			final double[] projection = getProjection(croppedImage, !axis);
 
-		for (int i = 0; i < projection.length; i++) {
-			if (start < 0 && projection[i] > 0) {
-				start = i;
+			int start = -1;
+			int end = -1;
+
+			for (int i = 0; i < projection.length; i++) {
+				if (start < 0 && projection[i] > 0) {
+					start = i;
+				}
+
+				if (end < 0 && projection[projection.length - i - 1] > 0) {
+					end = projection.length - i;
+				}
 			}
 
-			if (end < 0 && projection[projection.length - i - 1] > 0) {
-				end = projection.length - i;
-			}
+			return end > start ? new Range(start, end) : Range.all();
+		} finally {
+			croppedImage.release();
 		}
-
-		return end > start ? new Range(start, end) : Range.all();
 	}
 
 	/**
@@ -166,11 +215,15 @@ public final class Processor {
 	 */
 	private static double[] getProjection(Mat input, boolean axis) {
 		final Mat sum = new Mat();
-		Core.reduce(input, sum, axis ? 1 : 0, Core.REDUCE_SUM, CvType.CV_64F);
-		final double[] output = new double[sum.rows() * sum.cols()];
-		sum.get(0, 0, output);
-		sum.release();
-		return output;
+
+		try {
+			Core.reduce(input, sum, axis ? 1 : 0, Core.REDUCE_SUM, CvType.CV_64F);
+			final double[] output = new double[sum.rows() * sum.cols()];
+			sum.get(0, 0, output);
+			return output;
+		} finally {
+			sum.release();
+		}
 	}
 
 	/**
@@ -263,5 +316,9 @@ public final class Processor {
 				.mapToInt(Int2LongMap.Entry::getIntKey)
 				.findFirst()
 				.orElse(0);
+	}
+
+	private static String cleanString(String text) {
+		return text.trim().replaceAll("\\W+", "_").replaceAll("_+", "_");
 	}
 }

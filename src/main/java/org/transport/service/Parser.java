@@ -11,9 +11,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -31,73 +29,69 @@ public final class Parser {
 			Pattern.compile("[?&]id=([a-zA-Z0-9_-]+)(&|$)")
 	);
 
-	public void parse(BiConsumer<ObjectArrayList<String>, byte[]> callback) {
+	public void parse(BiConsumer<ObjectArrayList<String>, String> callback) {
 		parseWebsite(baseUri, document -> {
 			// Find the div elements containing the table (inside data-code)
-			document.select("div[data-code*='table']").forEach(divElement -> Jsoup.parse(divElement.attr("data-code")).select("tbody").forEach(tableElement -> {
-				final Elements rowElements = tableElement.children();
-				final String[] previousGroups = {"", ""};
+			final List<Element> elements = document.select("div[data-code*='table']");
 
-				// Iterate each row
-				rowElements.forEach(rowElement -> {
-					final Elements columnElements = rowElement.children();
-					final ObjectArrayList<String> groups = new ObjectArrayList<>();
-					final ObjectArrayList<String> sources = new ObjectArrayList<>();
+			if (elements.isEmpty()) {
+				System.err.printf("No table found for [%s]%n", document.title());
+			} else {
+				elements.forEach(divElement -> Jsoup.parse(divElement.attr("data-code")).select("tbody").forEach(tableElement -> {
+					final Elements rowElements = tableElement.children();
+					final String[] previousGroups = {"", ""};
 
-					// Iterate each column of each row
-					for (int i = 0; i < columnElements.size(); i++) {
-						final Element columnElement = columnElements.get(i);
-						final Elements linkElements = columnElement.select("a[href]");
+					// Iterate each row
+					rowElements.forEach(rowElement -> {
+						final Elements columnElements = rowElement.children();
+						final ObjectArrayList<String> groups = new ObjectArrayList<>();
+						final ObjectArrayList<String> sources = new ObjectArrayList<>();
 
-						if (linkElements.isEmpty()) {
-							// If the column has no links, add to the groups
-							final String group = columnElement.text();
-							if (i < previousGroups.length) {
-								if (!group.isEmpty()) {
-									previousGroups[i] = group;
-								}
-								if (!previousGroups[i].isEmpty()) {
-									groups.add(previousGroups[i]);
+						// Iterate each column of each row
+						for (int i = 0; i < columnElements.size(); i++) {
+							final Element columnElement = columnElements.get(i);
+							final Elements linkElements = columnElement.select("a[href]");
+
+							if (linkElements.isEmpty()) {
+								// If the column has no links, add to the groups
+								final String group = columnElement.text();
+								if (i < previousGroups.length) {
+									if (!group.isEmpty()) {
+										previousGroups[i] = group;
+									}
+									if (!previousGroups[i].isEmpty()) {
+										groups.add(previousGroups[i]);
+									}
+								} else {
+									if (!group.isEmpty()) {
+										groups.add(group);
+									}
 								}
 							} else {
-								if (!group.isEmpty()) {
-									groups.add(group);
-								}
+								// If the column has links, add to the sources
+								linkElements.forEach(linkElement -> {
+									final String href = linkElement.attr("href");
+									final String source = getGoogleDriveSource(href);
+									if (source == null) {
+										System.err.printf("Unknown image source [%s] for %s%n", href, groups);
+									} else {
+										sources.add(source);
+									}
+								});
 							}
-						} else {
-							// If the column has links, add to the sources
-							linkElements.forEach(linkElement -> {
-								final String href = linkElement.attr("href");
-								final String source = getGoogleDriveSource(href);
-								if (source == null) {
-									System.err.printf("Unknown image source [%s] for %s%n", href, groups);
-								} else {
-									sources.add(source);
-								}
-							});
 						}
-					}
 
-					// Create display objects
-					sources.forEach(source -> {
-						final URI uri = URI.create(String.format("https://lh3.googleusercontent.com/d/%s", source));
-						try (final HttpClient httpClient = HttpClient.newHttpClient()) {
-							callback.accept(groups, httpClient.send(
-									HttpRequest.newBuilder().uri(uri).GET().build(),
-									HttpResponse.BodyHandlers.ofByteArray()
-							).body());
-						} catch (IOException | InterruptedException e) {
-							System.err.println(e.getMessage());
-						}
+						// Create display objects
+						sources.forEach(source -> callback.accept(groups, source));
 					});
-				});
-			}));
+				}));
+			}
 		});
 	}
 
 	private void parseWebsite(URI uri, Consumer<Document> consumer) {
 		try {
-			final Document document = Jsoup.parse(uri.toURL(), 15000);
+			final Document document = Jsoup.parse(uri.toURL(), 20000);
 			final ObjectArrayList<URI> links = parseLinks(document);
 
 			if (links.isEmpty()) {
