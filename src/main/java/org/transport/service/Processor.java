@@ -79,7 +79,6 @@ public final class Processor {
 	 */
 	private Display getResult(Mat image, int pitchX, int pitchY) {
 		final Mat binary = new Mat();
-		final Mat integral = new Mat();
 		final int rawWidth = image.width();
 		final int rawHeight = image.height();
 		final int newPitchX = Math.max(1, pitchX);
@@ -91,17 +90,16 @@ public final class Processor {
 
 		try {
 			Imgproc.threshold(image, binary, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
-			Imgproc.integral(binary, integral, CvType.CV_32S);
 			final int[] pixels = new int[width * height];
 			final IntOpenHashSet values = new IntOpenHashSet();
 
 			for (int x = 0; x < width; x++) {
 				for (int y = 0; y < height; y++) {
 					final int x1 = x * newPitchX;
-					final int x2 = Math.min((x + 1) * newPitchX, rawWidth - 1);
+					final int x2 = Math.min((x + 1) * newPitchX, rawWidth);
 					final int y1 = y * newPitchY;
-					final int y2 = Math.min((y + 1) * newPitchY, rawHeight - 1);
-					final int value = getRectangleSum(integral, x1 + 1, y1 + 1, x2 + 1, y2 + 1);
+					final int y2 = Math.min((y + 1) * newPitchY, rawHeight);
+					final int value = getWhitePixelCount(binary, x1, y1, x2, y2);
 					values.add(value);
 					pixels[x + y * width] = value;
 				}
@@ -139,7 +137,6 @@ public final class Processor {
 			throw new RuntimeException(e);
 		} finally {
 			binary.release();
-			integral.release();
 			output.release();
 			matOfByte.release();
 		}
@@ -286,12 +283,16 @@ public final class Processor {
 		return sum / (smoothAmount * 2 + 1);
 	}
 
-	private static int getRectangleSum(Mat integral, int x1, int y1, int x2, int y2) {
-		final int a = (int) integral.get(y1, x1)[0];
-		final int b = (int) integral.get(y1, x2)[0];
-		final int c = (int) integral.get(y2, x1)[0];
-		final int d = (int) integral.get(y2, x2)[0];
-		return d - b - c + a;
+	private static int getWhitePixelCount(Mat image, int x1, int y1, int x2, int y2) {
+		int count = 0;
+		for (int x = x1; x < x2; x++) {
+			for (int y = y1; y < y2; y++) {
+				if (image.get(y, x)[0] > 0) {
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 
 	private static int getMedian(IntArrayList values) {
