@@ -87,8 +87,8 @@ public final class Processor {
 		final int rawHeight = image.height();
 		final int newPitchX = Math.max(1, pitchX);
 		final int newPitchY = Math.max(1, pitchY);
-		final int width = Math.ceilDiv(rawWidth, newPitchX);
-		final int height = Math.ceilDiv(rawHeight, newPitchY);
+		final int width = Math.round((float) rawWidth / newPitchX);
+		final int height = Math.round((float) rawHeight / newPitchY);
 		final Mat output = new Mat(height, width, CvType.CV_8U);
 		final MatOfByte matOfByte = new MatOfByte();
 
