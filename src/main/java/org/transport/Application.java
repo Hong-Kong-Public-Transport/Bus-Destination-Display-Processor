@@ -1,6 +1,7 @@
 package org.transport;
 
 import nu.pattern.OpenCV;
+import org.transport.service.Aggregator;
 import org.transport.service.Parser;
 import org.transport.service.Processor;
 
@@ -15,18 +16,23 @@ public final class Application {
 	public static void main(String[] args) throws IOException {
 		OpenCV.loadLocally();
 
-		if (args.length < 2) {
+		if (args.length < 5) {
 			System.err.println("Invalid arguments!");
 			return;
 		}
 
 		final URI baseUri = URI.create(args[0] + (args[0].endsWith("/") ? "" : "/"));
-		final Path outputDirectory = Paths.get(args[1]);
-		Files.createDirectories(outputDirectory);
+		final String namespace = args[1];
+		final Path displayOutputDirectory = Paths.get(args[2]);
+		final Path indexOutputDirectory = Paths.get(args[3]);
+		final Path cppOutputDirectory = Paths.get(args[4]);
 
-		System.out.println("Fetching displays");
-		new Parser(baseUri).parse((groups, source) -> new Processor(groups, source, outputDirectory).process(display -> {
-			// TODO do something with display
-		}));
+		Files.createDirectories(displayOutputDirectory);
+		Files.createDirectories(indexOutputDirectory);
+		Files.createDirectories(cppOutputDirectory);
+
+		final Aggregator aggregator = new Aggregator(namespace, indexOutputDirectory, cppOutputDirectory);
+		new Parser(baseUri).parse((groups, source) -> new Processor(groups, source, displayOutputDirectory).process(aggregator::add));
+		aggregator.aggregate();
 	}
 }

@@ -30,7 +30,7 @@ public final class Processor {
 
 	private final ObjectArrayList<String> groups;
 	private final String source;
-	private final Path outputDirectory;
+	private final Path displayOutputDirectory;
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
 	private static final String FILE_FORMAT = ".png";
@@ -41,12 +41,16 @@ public final class Processor {
 	 */
 	public void process(Consumer<Display> callback) {
 		getGoogleDriveImage(bytes -> {
-			final Mat image = getImage(bytes);
-
 			try {
-				callback.accept(getResult(image, estimatePitch(image, false), estimatePitch(image, true)));
-			} finally {
-				image.release();
+				final Mat image = getImage(bytes);
+
+				try {
+					callback.accept(getResult(image, estimatePitch(image, false), estimatePitch(image, true)));
+				} finally {
+					image.release();
+				}
+			} catch (Exception e) {
+				System.err.printf("Failed to process image [%s]: %s%n", getGroupName(), e.getMessage());
 			}
 		});
 	}
@@ -119,20 +123,15 @@ public final class Processor {
 				byteArrayOutputStream.write(data);
 			}
 
-			final StringBuilder stringBuilder = new StringBuilder();
-			for (int i = 0; i < Math.min(groups.size(), 2); i++) {
-				stringBuilder.append(groups.get(i).toUpperCase()).append("_");
-			}
-
-			stringBuilder.append(source.toLowerCase().replace("_", ""));
 			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
-			final Path outputPath = outputDirectory.resolve(cleanString(stringBuilder.toString()) + FILE_FORMAT);
+			final String fileName = cleanString(String.format("%s_%s", getGroupName(), source.toLowerCase().replace("_", ""))) + FILE_FORMAT;
+			final Path outputPath = displayOutputDirectory.resolve(fileName);
 			final byte[] bytes = matOfByte.toArray();
 			if (!Files.exists(outputPath) || !Arrays.equals(bytes, Files.readAllBytes(outputPath))) {
 				Files.write(outputPath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 			}
 
-			return new Display(groups, width, height, byteArrayOutputStream.toByteArray());
+			return new Display(groups, width, height, fileName, byteArrayOutputStream.toByteArray());
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		} finally {
@@ -140,6 +139,16 @@ public final class Processor {
 			output.release();
 			matOfByte.release();
 		}
+	}
+
+	private String getGroupName() {
+		final ObjectArrayList<String> text = new ObjectArrayList<>();
+
+		for (int i = 0; i < Math.min(groups.size(), 2); i++) {
+			text.add(groups.get(i).toUpperCase());
+		}
+
+		return String.join("_", text);
 	}
 
 	/**
