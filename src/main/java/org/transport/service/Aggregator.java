@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.AllArgsConstructor;
+import org.transport.Application;
 import org.transport.entity.Display;
 import org.transport.entity.Index;
 
@@ -16,8 +17,7 @@ import java.nio.file.StandardOpenOption;
 public final class Aggregator {
 
 	private final String namespace;
-	private final Path indexOutputDirectory;
-	private final Path cppOutputDirectory;
+	private final Path outputDirectory;
 
 	private final Int2ObjectOpenHashMap<Int2ObjectOpenHashMap<ObjectArrayList<Display>>> displaysByDimensions = new Int2ObjectOpenHashMap<>();
 
@@ -37,15 +37,16 @@ public final class Aggregator {
 				indexList.add(new Index(display.groups(), display.fileName(), i));
 			}
 
+			final Path newOutputDirectory = Application.createDirectory(outputDirectory, width, height, null);
+
 			try {
-				OBJECT_MAPPER.writeValue(indexOutputDirectory.resolve(String.format("%s_%s.json", width, height)).toFile(), indexList);
+				OBJECT_MAPPER.writeValue(newOutputDirectory.resolve("index.json").toFile(), indexList);
 			} catch (IOException e) {
 				System.err.println(e.getMessage());
 			}
 
-			final String newNamespace = String.format("%s_%s_%s", namespace, width, height);
 			final StringBuilder stringBuilder = new StringBuilder("#pragma once\n#include <Arduino.h>\n\n");
-			stringBuilder.append("namespace ").append(newNamespace).append(" {\n");
+			stringBuilder.append("namespace ").append(namespace).append("_").append(width).append("_").append(height).append(" {\n");
 			stringBuilder.append("\tconstexpr auto WIDTH = ").append(width).append(";\n");
 			stringBuilder.append("\tconstexpr auto HEIGHT = ").append(height).append(";\n\n");
 			stringBuilder.append("\tconst uint8_t PROGMEM DISPLAYS[").append(displayCount).append("][").append(width * height / 8).append("] = {\n");
@@ -62,7 +63,7 @@ public final class Aggregator {
 			stringBuilder.append("};\n");
 
 			try {
-				Files.writeString(cppOutputDirectory.resolve(newNamespace + ".h"), stringBuilder, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+				Files.writeString(newOutputDirectory.resolve("displays.h"), stringBuilder, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 			} catch (IOException e) {
 				System.err.println(e.getMessage());
 			}

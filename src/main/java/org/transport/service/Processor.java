@@ -9,6 +9,7 @@ import lombok.AllArgsConstructor;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
+import org.transport.Application;
 import org.transport.entity.Display;
 
 import java.io.ByteArrayOutputStream;
@@ -30,7 +31,7 @@ public final class Processor {
 
 	private final ObjectArrayList<String> groups;
 	private final String source;
-	private final Path displayOutputDirectory;
+	private final Path outputDirectory;
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
 	private static final String FILE_FORMAT = ".png";
@@ -123,10 +124,13 @@ public final class Processor {
 				byteArrayOutputStream.write(data);
 			}
 
-			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
+			final Path newOutputDirectory = Application.createDirectory(outputDirectory, width, height, "image");
 			final String fileName = cleanString(String.format("%s_%s", getGroupName(), source.toLowerCase().replace("_", ""))) + FILE_FORMAT;
-			final Path outputPath = displayOutputDirectory.resolve(fileName);
+			final Path outputPath = newOutputDirectory.resolve(fileName);
+
+			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
 			final byte[] bytes = matOfByte.toArray();
+
 			if (!Files.exists(outputPath) || !Arrays.equals(bytes, Files.readAllBytes(outputPath))) {
 				Files.write(outputPath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 			}
