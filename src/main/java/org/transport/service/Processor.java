@@ -122,7 +122,7 @@ public final class Processor {
 			final String fileName = cleanString(String.format("%s_%s", getGroupName(), source.toLowerCase().replace("_", ""))) + FILE_FORMAT;
 			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
 			final byte[] pixelBytes = byteArrayOutputStream.toByteArray();
-			return new Display(groups, width, height, fileName, pixelBytes, Base64.getEncoder().encodeToString(pixelBytes), matOfByte.toArray());
+			return new Display(new ObjectArrayList<>(groups), width, height, fileName, pixelBytes, Base64.getEncoder().encodeToString(pixelBytes), matOfByte.toArray());
 		} finally {
 			binary.release();
 			output.release();

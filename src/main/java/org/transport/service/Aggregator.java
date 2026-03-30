@@ -30,12 +30,11 @@ public final class Aggregator {
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
 	public void add(Display display) {
-		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new ObjectArrayList<>(), new Object2ObjectOpenHashMap<>(), new ObjectOpenHashSet<>()));
+		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new Object2ObjectOpenHashMap<>(), new ObjectOpenHashSet<>()));
 		final Display existingDisplay = dimensionsCache.existingDisplaysByBase64.get(display.base64());
 
 		if (existingDisplay == null) {
 			// Save to cache
-			dimensionsCache.displays.add(display);
 			dimensionsCache.existingDisplaysByBase64.put(display.base64(), display);
 
 			// Write image file
@@ -67,11 +66,11 @@ public final class Aggregator {
 			stringBuilder.append("namespace ").append(namespace).append("_").append(width).append("_").append(height).append(" {\n");
 			stringBuilder.append("\tconstexpr auto WIDTH = ").append(width).append(";\n");
 			stringBuilder.append("\tconstexpr auto HEIGHT = ").append(height).append(";\n");
-			final int displayCount = dimensionsCache.displays.size();
+			final int displayCount = dimensionsCache.existingDisplaysByBase64.size();
 			stringBuilder.append("\tconstexpr auto COUNT = ").append(displayCount).append(";\n");
 			stringBuilder.append("\tconst uint8_t PROGMEM DISPLAYS[").append(displayCount).append("][").append(width * height / 8).append("] = {\n");
 
-			dimensionsCache.displays.forEach(display -> {
+			dimensionsCache.existingDisplaysByBase64.values().forEach(display -> {
 				// Append index
 				indexList.add(new Index(new ObjectArraySet<>(display.groups()), display.fileName(), display.base64()));
 
@@ -138,6 +137,6 @@ public final class Aggregator {
 		return newOutputDirectory;
 	}
 
-	private record DimensionsCache(ObjectArrayList<Display> displays, Object2ObjectOpenHashMap<String, Display> existingDisplaysByBase64, ObjectOpenHashSet<String> displayFileNames) {
+	private record DimensionsCache(Object2ObjectOpenHashMap<String, Display> existingDisplaysByBase64, ObjectOpenHashSet<String> displayFileNames) {
 	}
 }
