@@ -9,7 +9,6 @@ import lombok.AllArgsConstructor;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
-import org.transport.Application;
 import org.transport.entity.Display;
 
 import java.io.ByteArrayOutputStream;
@@ -18,11 +17,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.function.Consumer;
 
@@ -31,7 +27,6 @@ public final class Processor {
 
 	private final ObjectArrayList<String> groups;
 	private final String source;
-	private final Path outputDirectory;
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
 	private static final String FILE_FORMAT = ".png";
@@ -124,20 +119,10 @@ public final class Processor {
 				byteArrayOutputStream.write(data);
 			}
 
-			final Path newOutputDirectory = Application.createDirectory(outputDirectory, width, height, "image");
 			final String fileName = cleanString(String.format("%s_%s", getGroupName(), source.toLowerCase().replace("_", ""))) + FILE_FORMAT;
-			final Path outputPath = newOutputDirectory.resolve(fileName);
-
 			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
-			final byte[] bytes = matOfByte.toArray();
-
-			if (!Files.exists(outputPath) || !Arrays.equals(bytes, Files.readAllBytes(outputPath))) {
-				Files.write(outputPath, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-			}
-
-			return new Display(groups, width, height, fileName, byteArrayOutputStream.toByteArray());
-		} catch (IOException e) {
-			throw new RuntimeException(e);
+			final byte[] pixelBytes = byteArrayOutputStream.toByteArray();
+			return new Display(groups, width, height, fileName, pixelBytes, Base64.getEncoder().encodeToString(pixelBytes), matOfByte.toArray());
 		} finally {
 			binary.release();
 			output.release();
@@ -156,11 +141,11 @@ public final class Processor {
 	}
 
 	/**
-	 * @param imageBytes the raw image bytes
+	 * @param pixelBytes the raw image bytes
 	 * @return a grayscale {@link Mat} image
 	 */
-	private static Mat getImage(byte[] imageBytes) {
-		final MatOfByte matOfByte = new MatOfByte(imageBytes);
+	private static Mat getImage(byte[] pixelBytes) {
+		final MatOfByte matOfByte = new MatOfByte(pixelBytes);
 
 		try {
 			Mat imageBGR = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR);
