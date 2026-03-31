@@ -10,6 +10,7 @@ import org.apache.commons.imaging.common.PackBits;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
+import org.transport.Application;
 import org.transport.entity.Display;
 
 import java.io.ByteArrayOutputStream;
@@ -105,12 +106,12 @@ public final class Processor {
 			final int threshold = getMedian(new IntArrayList(values));
 			final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
 
-			for (int i = 0; i < pixels.length; i += 8) {
+			for (int i = 0; i < pixels.length; i += Application.BITS_PER_BYTE) {
 				int data = 0;
-				for (int j = 0; j < 8; j++) {
+				for (int j = 0; j < Application.BITS_PER_BYTE; j++) {
 					if (i + j < pixels.length) {
 						final boolean filled = pixels[i + j] >= threshold;
-						data |= (filled ? 0x80 : 0) >> j;
+						data |= (filled ? 1 : 0) << j;
 						output.put((i + j) / width, (i + j) % width, filled ? 0xFF : 0);
 					}
 				}

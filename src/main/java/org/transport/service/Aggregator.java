@@ -9,6 +9,7 @@ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.io.FileUtils;
 import org.jspecify.annotations.Nullable;
+import org.transport.Application;
 import org.transport.entity.Display;
 import org.transport.entity.Index;
 
@@ -27,15 +28,15 @@ public final class Aggregator {
 
 	private int mergedDisplays;
 
-	private final String namespace;
 	private final Path outputDirectory;
 
 	private final Int2ObjectOpenHashMap<Int2ObjectOpenHashMap<DimensionsCache>> displaysByDimensions = new Int2ObjectOpenHashMap<>();
 	private final ObjectOpenHashSet<String> outputDirectories = new ObjectOpenHashSet<>();
 
+	public static final String IMAGE_DIRECTORY = "image";
+	public static final String INDEX_FILE = "index.json";
+	public static final String BINARY_FILE = "displays.dat";
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-	private static final int BYTES_PER_INT = 4;
-	private static final int BITS_PER_BYTE = 8;
 
 	public void add(Display display) {
 		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new Object2ObjectLinkedOpenHashMap<>(), new ObjectOpenHashSet<>()));
@@ -64,7 +65,9 @@ public final class Aggregator {
 	}
 
 	public void aggregate() {
-		System.out.printf("Merged %s identical display(s)%n", mergedDisplays);
+		if (mergedDisplays > 0) {
+			System.out.printf("Merged %s identical display(s)%n", mergedDisplays);
+		}
 
 		// Clean other directories
 		iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
@@ -72,8 +75,8 @@ public final class Aggregator {
 		displaysByDimensions.forEach((width, byteListForHeight) -> byteListForHeight.forEach((height, dimensionsCache) -> {
 			final Path imageDirectory = createImageDirectory(width, height);
 			final Path newOutputDirectory = createDirectory(width, height, null);
-			final Path indexFile = newOutputDirectory.resolve("index.json");
-			final Path binaryFile = newOutputDirectory.resolve("displays.dat");
+			final Path indexFile = newOutputDirectory.resolve(INDEX_FILE);
+			final Path binaryFile = newOutputDirectory.resolve(BINARY_FILE);
 
 			// Clean main directory
 			iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
@@ -85,7 +88,7 @@ public final class Aggregator {
 			final ByteArrayOutputStream offsetsStream = new ByteArrayOutputStream();
 			final ByteArrayOutputStream imageBytesStream = new ByteArrayOutputStream();
 			final int imageCount = dimensionsCache.existingDisplaysByBase64.size();
-			int binaryOffset = (imageCount + 3) * BYTES_PER_INT; // include width, height, and image count
+			int binaryOffset = (imageCount + 3) * Application.BYTES_PER_INT; // include width, height, and image count
 
 			for (final Display display : dimensionsCache.existingDisplaysByBase64.values()) {
 				// Append index
@@ -124,7 +127,7 @@ public final class Aggregator {
 	}
 
 	private Path createImageDirectory(int width, int height) {
-		return createDirectory(width, height, "image");
+		return createDirectory(width, height, IMAGE_DIRECTORY);
 	}
 
 	private Path createDirectory(int width, int height, @Nullable String name) {
@@ -162,8 +165,8 @@ public final class Aggregator {
 	}
 
 	private static void write32(ByteArrayOutputStream byteArrayOutputStream, int data) {
-		for (int i = 0; i < BYTES_PER_INT; i++) {
-			byteArrayOutputStream.write((byte) ((data >> i * BITS_PER_BYTE) & 0xFF));
+		for (int i = 0; i < Application.BYTES_PER_INT; i++) {
+			byteArrayOutputStream.write((byte) ((data >> i * Application.BITS_PER_BYTE) & 0xFF));
 		}
 	}
 

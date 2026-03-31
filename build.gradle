@@ -25,11 +25,19 @@ dependencies {
 	implementation "org.openpnp:opencv:+"
 	implementation "org.jsoup:jsoup:+"
 	compileOnly "org.projectlombok:lombok:+"
+	testImplementation "org.junit.jupiter:junit-jupiter-api:+"
+	testImplementation "org.junit.platform:junit-platform-launcher:+"
+	testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:+"
 	annotationProcessor "org.projectlombok:lombok:+"
 }
 
 application {
 	mainClass = "org.transport.Application"
+}
+
+test {
+	useJUnitPlatform()
+	testLogging { showStandardStreams = true }
 }
 
 tasks.named("shadowJar", ShadowJar) {
