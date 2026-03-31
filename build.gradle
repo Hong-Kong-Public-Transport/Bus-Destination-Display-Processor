@@ -20,6 +20,7 @@ dependencies {
 	implementation "it.unimi.dsi:fastutil:+"
 	implementation "com.fasterxml.jackson.core:jackson-databind:+"
 	implementation "org.apache.commons:commons-io:+"
+	implementation "org.apache.commons:commons-imaging:+"
 	implementation "org.jspecify:jspecify:+"
 	implementation "org.openpnp:opencv:+"
 	implementation "org.jsoup:jsoup:+"

@@ -6,6 +6,7 @@ import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.AllArgsConstructor;
+import org.apache.commons.imaging.common.PackBits;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
@@ -18,7 +19,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.function.Consumer;
 
@@ -32,16 +32,13 @@ public final class Processor {
 	private static final String FILE_FORMAT = ".png";
 	private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(10)).build();
 
-	/**
-	 * Using the raw image bytes of an image of an LED dot matrix, convert it to a black and white byte array representing which LEDs are on.
-	 */
 	public void process(Consumer<Display> callback) {
 		getGoogleDriveImage(bytes -> {
 			try {
 				final Mat image = getImage(bytes);
 
 				try {
-					callback.accept(getResult(image, estimatePitch(image, false), estimatePitch(image, true)));
+					getResult(image, estimatePitch(image, false), estimatePitch(image, true), callback);
 				} finally {
 					image.release();
 				}
@@ -72,12 +69,12 @@ public final class Processor {
 	}
 
 	/**
-	 * @param image  the input image
-	 * @param pitchX the estimated distance in pixels between LEDs on the X-axis
-	 * @param pitchY the estimated distance in pixels between LEDs on the Y-axis
-	 * @return a {@link Display} object with width, height, and image byte data (1 bit per pixel)
+	 * @param image    the input image
+	 * @param pitchX   the estimated distance in pixels between LEDs on the X-axis
+	 * @param pitchY   the estimated distance in pixels between LEDs on the Y-axis
+	 * @param callback on success, consumes a {@link Display} object with width, height, and image byte data (compressed using PackBits)
 	 */
-	private Display getResult(Mat image, int pitchX, int pitchY) {
+	private void getResult(Mat image, int pitchX, int pitchY, Consumer<Display> callback) {
 		final Mat binary = new Mat();
 		final int rawWidth = image.width();
 		final int rawHeight = image.height();
@@ -112,8 +109,9 @@ public final class Processor {
 				int data = 0;
 				for (int j = 0; j < 8; j++) {
 					if (i + j < pixels.length) {
-						data |= (pixels[i + j] >= threshold ? 0x80 : 0) >> j;
-						output.put((i + j) / width, (i + j) % width, pixels[i + j] >= threshold ? 0xFF : 0);
+						final boolean filled = pixels[i + j] >= threshold;
+						data |= (filled ? 0x80 : 0) >> j;
+						output.put((i + j) / width, (i + j) % width, filled ? 0xFF : 0);
 					}
 				}
 				byteArrayOutputStream.write(data);
@@ -121,8 +119,10 @@ public final class Processor {
 
 			final String fileName = cleanString(String.format("%s_%s", getGroupName(), source.toLowerCase().replace("_", ""))) + FILE_FORMAT;
 			Imgcodecs.imencode(FILE_FORMAT, output, matOfByte);
-			final byte[] pixelBytes = byteArrayOutputStream.toByteArray();
-			return new Display(new ObjectArrayList<>(groups), width, height, fileName, pixelBytes, Base64.getEncoder().encodeToString(pixelBytes), matOfByte.toArray());
+			final byte[] pixelBytes = PackBits.compress(byteArrayOutputStream.toByteArray());
+			callback.accept(new Display(new ObjectArrayList<>(groups), width, height, fileName, pixelBytes, matOfByte.toArray()));
+		} catch (IOException e) {
+			System.err.println(e.getMessage());
 		} finally {
 			binary.release();
 			output.release();
