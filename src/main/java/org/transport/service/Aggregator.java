@@ -22,6 +22,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 public final class Aggregator {
@@ -40,12 +41,12 @@ public final class Aggregator {
 
 	public void add(Display display) {
 		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new Object2ObjectLinkedOpenHashMap<>(), new ObjectOpenHashSet<>()));
-		final String base64 = Base64.getEncoder().encodeToString(display.pixelBytes());
-		final Display existingDisplay = dimensionsCache.existingDisplaysByBase64.get(base64);
+		final String key = display.frames().stream().map(frame -> String.format("%s_%s", frame.duration(), Base64.getEncoder().encodeToString(frame.pixelBytes()))).collect(Collectors.joining("_"));
+		final Display existingDisplay = dimensionsCache.existingDisplaysByKey.get(key);
 
 		if (existingDisplay == null) {
 			// Save to cache
-			dimensionsCache.existingDisplaysByBase64.put(base64, display);
+			dimensionsCache.existingDisplaysByKey.put(key, display);
 
 			// Write image file
 			final Path imagePath = createImageDirectory(display.width(), display.height()).resolve(display.fileName());
@@ -85,19 +86,17 @@ public final class Aggregator {
 			final ObjectArrayList<Index> indexList = new ObjectArrayList<>();
 
 			// Create binary file
-			final ByteArrayOutputStream offsetsStream = new ByteArrayOutputStream();
-			final ByteArrayOutputStream imageBytesStream = new ByteArrayOutputStream();
-			final int imageCount = dimensionsCache.existingDisplaysByBase64.size();
-			int binaryOffset = (imageCount + 3) * Application.BYTES_PER_INT; // include width, height, and image count
+			final int headerOffset = 2 * Application.BYTES_PER_INT;
+			final ByteArrayWriter imageByteArrayWriter = new ByteArrayWriter(headerOffset); // include width and height
 
-			for (final Display display : dimensionsCache.existingDisplaysByBase64.values()) {
+			for (final Display display : dimensionsCache.existingDisplaysByKey.values()) {
 				// Append index
 				indexList.add(new Index(new ObjectArraySet<>(display.groups()), display.fileName()));
 
 				// Append binary file
-				write32(offsetsStream, binaryOffset);
-				imageBytesStream.writeBytes(display.pixelBytes());
-				binaryOffset += display.pixelBytes().length;
+				final ByteArrayWriter frameByteArrayWriter = new ByteArrayWriter(headerOffset + (dimensionsCache.existingDisplaysByKey.size() + 1) * Application.BYTES_PER_INT + imageByteArrayWriter.getRawOffset()); // include header, image count, and image offsets
+				display.frames().forEach(frame -> frameByteArrayWriter.write(frame.duration(), frame.pixelBytes()));
+				imageByteArrayWriter.write(frameByteArrayWriter.getResult());
 			}
 
 			// Write index file
@@ -109,13 +108,11 @@ public final class Aggregator {
 
 			// Write binary file
 			final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-			write32(outputStream, width);
-			write32(outputStream, height);
-			write32(outputStream, imageCount);
+			ByteArrayWriter.write32(outputStream, width);
+			ByteArrayWriter.write32(outputStream, height);
+			outputStream.writeBytes(imageByteArrayWriter.getResult());
 
 			try {
-				offsetsStream.writeTo(outputStream);
-				imageBytesStream.writeTo(outputStream);
 				Files.write(binaryFile, outputStream.toByteArray(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 			} catch (IOException e) {
 				System.err.println(e.getMessage());
@@ -164,12 +161,6 @@ public final class Aggregator {
 		}
 	}
 
-	private static void write32(ByteArrayOutputStream byteArrayOutputStream, int data) {
-		for (int i = 0; i < Application.BYTES_PER_INT; i++) {
-			byteArrayOutputStream.write((byte) ((data >> i * Application.BITS_PER_BYTE) & 0xFF));
-		}
-	}
-
-	private record DimensionsCache(Object2ObjectLinkedOpenHashMap<String, Display> existingDisplaysByBase64, ObjectOpenHashSet<String> displayFileNames) {
+	private record DimensionsCache(Object2ObjectLinkedOpenHashMap<String, Display> existingDisplaysByKey, ObjectOpenHashSet<String> displayFileNames) {
 	}
 }

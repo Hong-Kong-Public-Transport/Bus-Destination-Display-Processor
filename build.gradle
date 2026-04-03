@@ -1,5 +1,3 @@
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 plugins {
 	id "java"
 	id "application"
@@ -22,7 +20,7 @@ dependencies {
 	implementation "org.apache.commons:commons-io:+"
 	implementation "org.apache.commons:commons-imaging:+"
 	implementation "org.jspecify:jspecify:+"
-	implementation "org.openpnp:opencv:+"
+	implementation "org.bytedeco:opencv-platform:+"
 	implementation "org.jsoup:jsoup:+"
 	compileOnly "org.projectlombok:lombok:+"
 	testImplementation "org.junit.jupiter:junit-jupiter-api:+"
@@ -38,8 +36,4 @@ application {
 test {
 	useJUnitPlatform()
 	testLogging { showStandardStreams = true }
-}
-
-tasks.named("shadowJar", ShadowJar) {
-	minimize()
 }

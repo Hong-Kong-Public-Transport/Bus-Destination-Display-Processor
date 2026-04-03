@@ -1,6 +1,7 @@
 package org.transport;
 
-import nu.pattern.OpenCV;
+import org.bytedeco.javacpp.Loader;
+import org.bytedeco.opencv.opencv_java;
 import org.transport.service.Aggregator;
 import org.transport.service.Parser;
 import org.transport.service.Processor;
@@ -15,7 +16,7 @@ public final class Application {
 	public static final int BITS_PER_BYTE = 8;
 
 	public static void main(String[] args) {
-		OpenCV.loadLocally();
+		Loader.load(opencv_java.class);
 
 		if (args.length < 2) {
 			System.err.println("Invalid arguments!");
