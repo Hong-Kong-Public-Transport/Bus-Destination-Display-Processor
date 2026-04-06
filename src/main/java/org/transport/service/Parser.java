@@ -8,28 +8,36 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.jspecify.annotations.Nullable;
+import org.transport.Application;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * Parses a website and extracts bus destination display images as raw file bytes.
+ */
 @AllArgsConstructor
 public final class Parser {
 
 	private final URI baseUri;
 
+	private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(10)).build();
 	private static final String MATCHING_CLASS_NAME = "XqQF9c";
 	private static final ObjectImmutableList<Pattern> GOOGLE_DRIVE_URL_PATTERNS = ObjectImmutableList.of(
 			Pattern.compile("^https://drive\\.google\\.com/file/d/([a-zA-Z0-9_-]+)/view"),
 			Pattern.compile("[?&]id=([a-zA-Z0-9_-]+)(&|$)")
 	);
 
-	public void parse(BiConsumer<ObjectArrayList<String>, String> callback) {
+	public void parse(RawImageCallback callback) {
 		parseWebsite(baseUri, document -> {
 			// Find the div elements containing the table (inside data-code)
 			final List<Element> elements = document.select("div[data-code*='table']");
@@ -82,7 +90,10 @@ public final class Parser {
 						}
 
 						// Create display objects
-						sources.forEach(source -> callback.accept(groups, source));
+						sources.forEach(source -> {
+							final String fileName = cleanString(String.format("%s_%s", getGroupName(groups), source.toLowerCase().replace("_", ""))) + Application.FILE_FORMAT;
+							getGoogleDriveImage(source, rawImageBytes -> callback.accept(groups, fileName, rawImageBytes));
+						});
 					});
 				}));
 			}
@@ -113,6 +124,20 @@ public final class Parser {
 		}).collect(Collectors.toCollection(ObjectArrayList::new));
 	}
 
+	private static String getGroupName(ObjectArrayList<String> groups) {
+		final ObjectArrayList<String> text = new ObjectArrayList<>();
+
+		for (int i = 0; i < Math.min(groups.size(), 2); i++) {
+			text.add(groups.get(i).toUpperCase());
+		}
+
+		return String.join("_", text);
+	}
+
+	private static String cleanString(String text) {
+		return text.trim().replaceAll("\\W+", "_").replaceAll("_+", "_");
+	}
+
 	/**
 	 * Returns the Google Drive file ID from a URL.
 	 *
@@ -129,5 +154,30 @@ public final class Parser {
 		}
 
 		return null;
+	}
+
+	private static void getGoogleDriveImage(String source, Consumer<byte[]> callback) {
+		try {
+			final HttpResponse<byte[]> httpResponse = HTTP_CLIENT.send(
+					HttpRequest.newBuilder().uri(URI.create(String.format("https://lh3.googleusercontent.com/d/%s", source))).timeout(Duration.ofSeconds(20)).GET().build(),
+					HttpResponse.BodyHandlers.ofByteArray()
+			);
+
+			if (httpResponse.statusCode() == 200) {
+				callback.accept(httpResponse.body());
+			} else {
+				System.err.printf("HTTP %d for [%s]%n", httpResponse.statusCode(), source);
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			System.err.println(e.getMessage());
+		} catch (IOException e) {
+			System.err.println(e.getMessage());
+		}
+	}
+
+	@FunctionalInterface
+	public interface RawImageCallback {
+		void accept(ObjectArrayList<String> groups, String fileName, byte[] rawImageBytes);
 	}
 }

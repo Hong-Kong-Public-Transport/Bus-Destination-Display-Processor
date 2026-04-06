@@ -2,12 +2,12 @@ package org.transport.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.io.FileUtils;
+import org.apache.commons.imaging.common.PackBits;
 import org.jspecify.annotations.Nullable;
 import org.transport.Application;
 import org.transport.entity.Display;
@@ -15,14 +15,9 @@ import org.transport.entity.Index;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 public final class Aggregator {
@@ -40,25 +35,15 @@ public final class Aggregator {
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
 	public void add(Display display) {
-		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new Object2ObjectLinkedOpenHashMap<>(), new ObjectOpenHashSet<>()));
-		final String key = display.frames().stream().map(frame -> String.format("%s_%s", frame.duration(), Base64.getEncoder().encodeToString(frame.pixelBytes()))).collect(Collectors.joining("_"));
-		final Display existingDisplay = dimensionsCache.existingDisplaysByKey.get(key);
+		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new ObjectLinkedOpenHashSet<>(), new FileWriter(createImageDirectory(display.width(), display.height()))));
+		final Display existingDisplay = dimensionsCache.existingDisplays.get(display);
 
 		if (existingDisplay == null) {
 			// Save to cache
-			dimensionsCache.existingDisplaysByKey.put(key, display);
+			dimensionsCache.existingDisplays.add(display);
 
 			// Write image file
-			final Path imagePath = createImageDirectory(display.width(), display.height()).resolve(display.fileName());
-			dimensionsCache.displayFileNames.add(display.fileName());
-
-			try {
-				if (!Files.exists(imagePath) || !Arrays.equals(display.fileBytes(), Files.readAllBytes(imagePath))) {
-					Files.write(imagePath, display.fileBytes(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-				}
-			} catch (IOException e) {
-				System.err.println(e.getMessage());
-			}
+			dimensionsCache.fileWriter.writeFile(display);
 		} else {
 			mergedDisplays++;
 			existingDisplay.groups().addAll(display.groups());
@@ -71,7 +56,7 @@ public final class Aggregator {
 		}
 
 		// Clean other directories
-		iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
+		FileWriter.iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
 
 		displaysByDimensions.forEach((width, byteListForHeight) -> byteListForHeight.forEach((height, dimensionsCache) -> {
 			final Path imageDirectory = createImageDirectory(width, height);
@@ -80,7 +65,7 @@ public final class Aggregator {
 			final Path binaryFile = newOutputDirectory.resolve(BINARY_FILE);
 
 			// Clean main directory
-			iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
+			FileWriter.iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
 
 			// Create index list
 			final ObjectArrayList<Index> indexList = new ObjectArrayList<>();
@@ -89,13 +74,13 @@ public final class Aggregator {
 			final int headerOffset = 2 * Application.BYTES_PER_INT;
 			final ByteArrayWriter imageByteArrayWriter = new ByteArrayWriter(headerOffset); // include width and height
 
-			for (final Display display : dimensionsCache.existingDisplaysByKey.values()) {
+			for (final Display display : dimensionsCache.existingDisplays) {
 				// Append index
 				indexList.add(new Index(new ObjectArraySet<>(display.groups()), display.fileName()));
 
 				// Append binary file
-				final ByteArrayWriter frameByteArrayWriter = new ByteArrayWriter(headerOffset + (dimensionsCache.existingDisplaysByKey.size() + 1) * Application.BYTES_PER_INT + imageByteArrayWriter.getRawOffset()); // include header, image count, and image offsets
-				display.frames().forEach(frame -> frameByteArrayWriter.write(frame.duration(), frame.pixelBytes()));
+				final ByteArrayWriter frameByteArrayWriter = new ByteArrayWriter(headerOffset + (dimensionsCache.existingDisplays.size() + 1) * Application.BYTES_PER_INT + imageByteArrayWriter.getRawOffset()); // include header, image count, and image offsets
+				display.frames().forEach(frame -> frameByteArrayWriter.write(frame.delayMicros(), getImageBytes(frame.pixels())));
 				imageByteArrayWriter.write(frameByteArrayWriter.getResult());
 			}
 
@@ -119,7 +104,7 @@ public final class Aggregator {
 			}
 
 			// Delete extra files in image directory
-			iterateDirectoryAndDelete(imageDirectory, path -> !dimensionsCache.displayFileNames.contains(path.getFileName().toString()));
+			dimensionsCache.fileWriter.cleanDirectory();
 		}));
 	}
 
@@ -144,23 +129,27 @@ public final class Aggregator {
 		return newOutputDirectory;
 	}
 
-	private static void iterateDirectoryAndDelete(Path directory, Predicate<Path> deleteCondition) {
-		try (final DirectoryStream<Path> directoryStream = Files.newDirectoryStream(directory)) {
-			directoryStream.forEach(path -> {
-				if (deleteCondition.test(path)) {
-					System.out.printf("Deleting %s [%s]%n", Files.isDirectory(path) ? "directory" : "file", path.toAbsolutePath());
-					try {
-						FileUtils.forceDelete(path.toFile());
-					} catch (IOException e) {
-						System.err.println(e.getMessage());
-					}
+	private static byte[] getImageBytes(boolean[] pixels) {
+		final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+		for (int i = 0; i < pixels.length; i += Application.BITS_PER_BYTE) {
+			int data = 0;
+			for (int j = 0; j < Application.BITS_PER_BYTE; j++) {
+				if (i + j < pixels.length) {
+					data |= (pixels[i + j] ? 1 : 0) << j;
 				}
-			});
+			}
+			byteArrayOutputStream.write(data);
+		}
+
+		try {
+			return PackBits.compress(byteArrayOutputStream.toByteArray());
 		} catch (IOException e) {
 			System.err.println(e.getMessage());
+			return new byte[0];
 		}
 	}
 
-	private record DimensionsCache(Object2ObjectLinkedOpenHashMap<String, Display> existingDisplaysByKey, ObjectOpenHashSet<String> displayFileNames) {
+	private record DimensionsCache(ObjectLinkedOpenHashSet<Display> existingDisplays, FileWriter fileWriter) {
 	}
 }

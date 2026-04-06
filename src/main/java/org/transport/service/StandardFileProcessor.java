@@ -4,23 +4,20 @@ import it.unimi.dsi.fastutil.ints.Int2LongMap;
 import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import lombok.Getter;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import org.bytedeco.opencv.global.opencv_core;
+import org.bytedeco.opencv.global.opencv_imgproc;
+import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_core.Range;
 import org.jspecify.annotations.Nullable;
-import org.opencv.core.Core;
-import org.opencv.core.CvType;
-import org.opencv.core.Mat;
-import org.opencv.core.Range;
-import org.opencv.imgcodecs.Imgcodecs;
-import org.opencv.imgproc.Imgproc;
+import org.transport.tool.OpenCVHelper;
 
+import java.awt.*;
 import java.util.Collections;
-import java.util.function.Consumer;
 
-public final class ImageProcessor {
+public final class StandardFileProcessor extends FileProcessorBase {
 
-	@Getter
 	private int width;
-	@Getter
 	private int height;
 	private int pitchX;
 	private int pitchY;
@@ -31,77 +28,79 @@ public final class ImageProcessor {
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
 
-	/**
-	 * Processes a raw image and outputs a black and white, cropped, and resized image. Note that the output image is released after the callback.
-	 *
-	 * @param rawImage the raw image
-	 * @param callback on success, consumes the output {@link Mat} image
-	 */
-	public void process(Mat rawImage, Consumer<Mat> callback) {
-		final Mat image = convertToGrayscale(rawImage);
-
-		try {
-			if (pitchX <= 0 || pitchY <= 0) {
-				pitchX = estimatePitch(image, false);
-				pitchY = estimatePitch(image, true);
-			}
-
-			getResult(image, callback);
-		} finally {
-			image.release();
-		}
+	public StandardFileProcessor(ObjectArrayList<String> groups, String source, byte[] rawImageBytes) {
+		super(groups, source, rawImageBytes);
 	}
 
-	/**
-	 * @param rawImage the raw image
-	 * @return a grayscale {@link Mat} image
-	 */
-	private Mat convertToGrayscale(Mat rawImage) {
-		Mat imageBGR;
+	@Override
+	protected boolean[] convertTo1Bit(int width, int height, int[] pixels) {
+		final Mat grayscaleImage = new Mat(height, width, opencv_core.CV_8UC1);
 
 		try {
-			imageBGR = Imgcodecs.imdecode(rawImage, Imgcodecs.IMREAD_COLOR);
-		} catch (Exception ignored) {
-			imageBGR = new Mat();
-			rawImage.copyTo(imageBGR);
-		}
-
-		final Mat imageHSV = new Mat();
-		final Mat grayscaleImage = new Mat();
-
-		try {
-			Imgproc.cvtColor(imageBGR, imageHSV, Imgproc.COLOR_BGR2HSV);
-			Core.extractChannel(imageHSV, grayscaleImage, 2);
+			for (int x = 0; x < width; x++) {
+				for (int y = 0; y < height; y++) {
+					final Color color = new Color(pixels[x + y * width]);
+					OpenCVHelper.setPixel(grayscaleImage, x, y, (byte) ((color.getRed() + color.getGreen() + color.getBlue()) / 3));
+				}
+			}
 
 			if (rangeX == null || rangeY == null) {
 				rangeX = getCropRange(grayscaleImage, true);
 				rangeY = getCropRange(grayscaleImage, false);
 			}
 
-			return new Mat(grayscaleImage, rangeX, rangeY).clone();
+			return process(grayscaleImage);
 		} finally {
-			imageBGR.release();
-			imageHSV.release();
 			grayscaleImage.release();
 		}
 	}
 
+	@Override
+	protected int getOutputWidth() {
+		return width;
+	}
+
+	@Override
+	protected int getOutputHeight() {
+		return height;
+	}
+
 	/**
-	 * @param image    the input image
-	 * @param callback on success, consumes the processed and resized {@link Mat} image
+	 * Processes a raw image and outputs a black and white, cropped, and resized image. Note that the output image is released after the callback.
+	 *
+	 * @param grayscaleImage the raw image
+	 * @return processed and resized image as a 1-bit pixel array
 	 */
-	private void getResult(Mat image, Consumer<Mat> callback) {
-		final Mat binary = new Mat();
-		final int rawWidth = image.width();
-		final int rawHeight = image.height();
-		final int newPitchX = Math.max(1, pitchX);
-		final int newPitchY = Math.max(1, pitchY);
-		width = Math.round((float) rawWidth / newPitchX);
-		height = Math.round((float) rawHeight / newPitchY);
-		final Mat output = new Mat(height, width, CvType.CV_8U);
+	private boolean[] process(Mat grayscaleImage) {
+		final Mat croppedImage = new Mat(grayscaleImage, rangeX, rangeY);
 
 		try {
-			Imgproc.threshold(image, binary, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
+			if (pitchX <= 0 || pitchY <= 0) {
+				pitchX = estimatePitch(croppedImage, false);
+				pitchY = estimatePitch(croppedImage, true);
+			}
+
+			return getResult(croppedImage);
+		} finally {
+			croppedImage.release();
+		}
+	}
+
+	/**
+	 * @param image the input image
+	 * @return processed and resized image as a 1-bit pixel array
+	 */
+	private boolean[] getResult(Mat image) {
+		final Mat binary = new Mat();
+
+		try {
+			final int rawWidth = image.cols();
+			final int rawHeight = image.rows();
+			final int newPitchX = Math.max(1, pitchX);
+			final int newPitchY = Math.max(1, pitchY);
+			width = Math.round((float) rawWidth / newPitchX);
+			height = Math.round((float) rawHeight / newPitchY);
+			opencv_imgproc.threshold(image, binary, 0, 255, opencv_imgproc.THRESH_BINARY | opencv_imgproc.THRESH_OTSU);
 			final int[][] pixels = new int[width][height];
 			final IntOpenHashSet values = new IntOpenHashSet();
 
@@ -118,35 +117,17 @@ public final class ImageProcessor {
 			}
 
 			final int threshold = getMedian(new IntArrayList(values));
+			final boolean[] output = new boolean[width * height];
 
 			for (int x = 0; x < width; x++) {
 				for (int y = 0; y < height; y++) {
-					output.put(y, x, pixels[x][y] >= threshold ? 0xFF : 0);
+					output[x + y * width] = pixels[x][y] >= threshold;
 				}
 			}
 
-			callback.accept(output);
-		} finally {
-			binary.release();
-			output.release();
-		}
-	}
-
-	/**
-	 * @param input the input image
-	 * @param axis  {@code false} for X-axis, {@code true} for Y-axis
-	 * @return an array of summed brightness values across an axis of the image
-	 */
-	public static double[] getProjection(Mat input, boolean axis) {
-		final Mat sum = new Mat();
-
-		try {
-			Core.reduce(input, sum, axis ? 1 : 0, Core.REDUCE_SUM, CvType.CV_64F);
-			final double[] output = new double[sum.rows() * sum.cols()];
-			sum.get(0, 0, output);
 			return output;
 		} finally {
-			sum.release();
+			binary.release();
 		}
 	}
 
@@ -156,8 +137,8 @@ public final class ImageProcessor {
 	 * @return a range of pixels with the black border removed
 	 */
 	private static Range getCropRange(Mat image, boolean axis) {
-		final int width = image.width();
-		final int height = image.height();
+		final int width = image.cols();
+		final int height = image.rows();
 		final Mat croppedImage = new Mat(
 				image,
 				axis ? Range.all() : new Range((int) Math.floor(height * 0.4), (int) Math.ceil(height * 0.6) + 1),
@@ -165,8 +146,7 @@ public final class ImageProcessor {
 		);
 
 		try {
-			final double[] projection = getProjection(croppedImage, axis);
-
+			final double[] projection = OpenCVHelper.getProjection(croppedImage, axis);
 			int start = -1;
 			int end = -1;
 
@@ -192,7 +172,7 @@ public final class ImageProcessor {
 	 * @return the estimated pixels between LEDs on the image
 	 */
 	private static int estimatePitch(Mat image, boolean axis) {
-		final double[] projection = getProjection(image, axis);
+		final double[] projection = OpenCVHelper.getProjection(image, axis);
 		final IntArrayList pitches = new IntArrayList();
 
 		for (int smoothAmount = 0; smoothAmount < MAX_SMOOTH_AMOUNT; smoothAmount++) {
@@ -242,7 +222,7 @@ public final class ImageProcessor {
 		int count = 0;
 		for (int x = x1; x < x2; x++) {
 			for (int y = y1; y < y2; y++) {
-				if (image.get(y, x)[0] > 0) {
+				if (OpenCVHelper.getPixel(image, x, y) > 0) {
 					count++;
 				}
 			}

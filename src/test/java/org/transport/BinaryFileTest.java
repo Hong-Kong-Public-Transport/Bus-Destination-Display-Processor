@@ -2,23 +2,22 @@ package org.transport;
 
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.Loader;
-import org.bytedeco.opencv.opencv_java;
+import org.bytedeco.opencv.global.opencv_core;
+import org.bytedeco.opencv.global.opencv_imgcodecs;
+import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_core.MatVector;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.opencv.core.Core;
-import org.opencv.core.CvType;
-import org.opencv.core.Mat;
-import org.opencv.core.MatOfInt;
-import org.opencv.imgcodecs.Animation;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.transport.service.Aggregator;
+import org.transport.service.FileWriter;
+import org.transport.tool.OpenCVHelper;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -29,7 +28,8 @@ public final class BinaryFileTest {
 	private static final String DIRECTORY_PROPERTY = "directory";
 
 	static {
-		Loader.load(opencv_java.class);
+		Loader.load(opencv_core.class);
+		Loader.load(opencv_imgcodecs.class);
 	}
 
 	@Test
@@ -39,7 +39,7 @@ public final class BinaryFileTest {
 		final String[] directorySplit = directory.getFileName().toString().split("_");
 		final int expectedWidth = Integer.parseInt(directorySplit[0]);
 		final int expectedHeight = Integer.parseInt(directorySplit[1]);
-		final int expectedImageCount = getFileCount(directory.resolve(Aggregator.IMAGE_DIRECTORY));
+		final int expectedImageCount = FileWriter.getDirectoryFileCount(directory.resolve(Aggregator.IMAGE_DIRECTORY));
 
 		// Assert header
 		final byte[] fileBytes = Files.readAllBytes(directory.resolve(Aggregator.BINARY_FILE));
@@ -60,7 +60,7 @@ public final class BinaryFileTest {
 		final int offset = imageOffsets[new Random().nextInt(expectedImageCount)];
 		byteBuffer.position(offset);
 		final int frameCount = byteBuffer.getInt();
-		final Animation animation = new Animation();
+		final opencv_imgcodecs.Animation animation = new opencv_imgcodecs.Animation();
 		final ObjectArrayList<Mat> frames = new ObjectArrayList<>();
 		final IntArrayList durations = new IntArrayList();
 
@@ -73,40 +73,24 @@ public final class BinaryFileTest {
 		// Rebuild frames
 		for (int i = 0; i < frameCount; i++) {
 			byteBuffer.position(frameOffsets[i]);
-			durations.add(byteBuffer.getInt());
+			durations.add(byteBuffer.getInt() / 1000); // TODO inaccurate first frame duration
 			final byte[] decoded = decodePackBits(fileBytes, byteBuffer.position(), bitsPerImage / Application.BITS_PER_BYTE);
-			final Mat frame = new Mat(expectedHeight, expectedWidth, CvType.CV_8UC1);
+			final Mat frame = new Mat(expectedHeight, expectedWidth, opencv_core.CV_8UC1);
 
 			for (int j = 0; j < bitsPerImage; j += Application.BITS_PER_BYTE) {
 				for (int k = 0; k < Application.BITS_PER_BYTE; k++) {
-					frame.put((j + k) / expectedWidth, (j + k) % expectedWidth, (decoded[j / Application.BITS_PER_BYTE] & (1 << k)) > 0 ? 0xFF : 0);
+					OpenCVHelper.setPixel(frame, (j + k) % expectedWidth, (j + k) / expectedWidth, (decoded[j / Application.BITS_PER_BYTE] & (1 << k)) > 0 ? (byte) 0xFF : 0);
 				}
 			}
 
-			if (frames.isEmpty()) {
-				frames.add(frame);
-			} else {
-				final Mat previousFrame = frames.getLast();
-				final Mat newFrame = new Mat();
-				Core.bitwise_xor(previousFrame, frame, newFrame);
-				frames.add(newFrame);
-				frame.release();
-			}
+			frames.add(frame);
 		}
 
 		// Export result
-		animation.set_frames(frames);
-		animation.set_durations(new MatOfInt(durations.toIntArray()));
-		Imgcodecs.imwriteanimation(directory.resolve("test.png").toString(), animation);
+		animation.frames(new MatVector(frames.toArray(Mat[]::new)));
+		animation.durations(new IntPointer(durations.toIntArray()));
+		opencv_imgcodecs.imwriteanimation(directory.resolve("test.png").toString(), animation);
 		frames.forEach(Mat::release);
-	}
-
-	private static int getFileCount(Path directory) throws IOException {
-		final int[] count = {0};
-		try (final DirectoryStream<Path> directoryStream = Files.newDirectoryStream(directory)) {
-			directoryStream.forEach(path -> count[0]++);
-		}
-		return count[0];
 	}
 
 	private static byte[] decodePackBits(byte[] encoded, int offset, int expectedCount) {

@@ -16,7 +16,7 @@ jobs:
         uses: actions/setup-java@main
         with:
           java-version: 21
-          distribution: 'microsoft'
+          distribution: 'zulu'
           cache: gradle
       - name: Make gradle wrapper executable
         run: chmod +x ./gradlew
