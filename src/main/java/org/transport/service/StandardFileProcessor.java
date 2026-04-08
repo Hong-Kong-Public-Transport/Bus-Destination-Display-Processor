@@ -5,14 +5,17 @@ import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import org.bytedeco.opencv.global.opencv_core;
+import it.unimi.dsi.fastutil.objects.ObjectImmutableList;
 import org.bytedeco.opencv.global.opencv_imgproc;
 import org.bytedeco.opencv.opencv_core.Mat;
 import org.bytedeco.opencv.opencv_core.Range;
 import org.jspecify.annotations.Nullable;
+import org.transport.entity.Display;
+import org.transport.entity.GenericImageDisplay;
+import org.transport.entity.ImageFrame;
+import org.transport.entity.StandardScrollDisplay;
 import org.transport.tool.OpenCVHelper;
 
-import java.awt.*;
 import java.util.Collections;
 
 public final class StandardFileProcessor extends FileProcessorBase {
@@ -28,22 +31,15 @@ public final class StandardFileProcessor extends FileProcessorBase {
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
 
-	public StandardFileProcessor(ObjectArrayList<String> groups, String source, byte[] rawImageBytes) {
-		super(groups, source, rawImageBytes);
+	public StandardFileProcessor(ObjectArrayList<String> groups, String fileName, byte[] rawImageBytes) {
+		super(groups, fileName, rawImageBytes);
 	}
 
 	@Override
 	protected boolean[] convertTo1Bit(int width, int height, int[] pixels) {
-		final Mat grayscaleImage = new Mat(height, width, opencv_core.CV_8UC1);
+		final Mat grayscaleImage = OpenCVHelper.pixelsToMat(width, height, pixels);
 
 		try {
-			for (int x = 0; x < width; x++) {
-				for (int y = 0; y < height; y++) {
-					final Color color = new Color(pixels[x + y * width]);
-					OpenCVHelper.setPixel(grayscaleImage, x, y, (byte) ((color.getRed() + color.getGreen() + color.getBlue()) / 3));
-				}
-			}
-
 			if (rangeX == null || rangeY == null) {
 				rangeX = getCropRange(grayscaleImage, true);
 				rangeY = getCropRange(grayscaleImage, false);
@@ -56,17 +52,12 @@ public final class StandardFileProcessor extends FileProcessorBase {
 	}
 
 	@Override
-	protected int getOutputWidth() {
-		return width;
-	}
-
-	@Override
-	protected int getOutputHeight() {
-		return height;
+	protected Display getDisplay(ObjectImmutableList<ImageFrame> imageFrames) {
+		return imageFrames.size() == 1 ? new GenericImageDisplay(groups, width, height, fileName, imageFrames) : new StandardScrollDisplay(groups, width, height, fileName, imageFrames);
 	}
 
 	/**
-	 * Processes a raw image and outputs a black and white, cropped, and resized image. Note that the output image is released after the callback.
+	 * Processes a raw image and outputs a black and white, cropped, and resized image.
 	 *
 	 * @param grayscaleImage the raw image
 	 * @return processed and resized image as a 1-bit pixel array

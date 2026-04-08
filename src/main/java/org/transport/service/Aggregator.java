@@ -7,11 +7,11 @@ import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import it.unimi.dsi.fastutil.objects.ObjectLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.imaging.common.PackBits;
 import org.jspecify.annotations.Nullable;
 import org.transport.Application;
 import org.transport.entity.Display;
 import org.transport.entity.Index;
+import org.transport.tool.FileHelper;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -35,7 +35,7 @@ public final class Aggregator {
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
 	public void add(Display display) {
-		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.width(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.height(), key -> new DimensionsCache(new ObjectLinkedOpenHashSet<>(), new FileWriter(createImageDirectory(display.width(), display.height()))));
+		final DimensionsCache dimensionsCache = displaysByDimensions.computeIfAbsent(display.getWidth(), key -> new Int2ObjectOpenHashMap<>()).computeIfAbsent(display.getHeight(), key -> new DimensionsCache(new ObjectLinkedOpenHashSet<>(), new FileWriter(createImageDirectory(display.getWidth(), display.getHeight()))));
 		final Display existingDisplay = dimensionsCache.existingDisplays.get(display);
 
 		if (existingDisplay == null) {
@@ -46,7 +46,7 @@ public final class Aggregator {
 			dimensionsCache.fileWriter.writeFile(display);
 		} else {
 			mergedDisplays++;
-			existingDisplay.groups().addAll(display.groups());
+			existingDisplay.getGroups().addAll(display.getGroups());
 		}
 	}
 
@@ -56,7 +56,7 @@ public final class Aggregator {
 		}
 
 		// Clean other directories
-		FileWriter.iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
+		FileHelper.iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
 
 		displaysByDimensions.forEach((width, byteListForHeight) -> byteListForHeight.forEach((height, dimensionsCache) -> {
 			final Path imageDirectory = createImageDirectory(width, height);
@@ -65,7 +65,7 @@ public final class Aggregator {
 			final Path binaryFile = newOutputDirectory.resolve(BINARY_FILE);
 
 			// Clean main directory
-			FileWriter.iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
+			FileHelper.iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
 
 			// Create index list
 			final ObjectArrayList<Index> indexList = new ObjectArrayList<>();
@@ -76,12 +76,10 @@ public final class Aggregator {
 
 			for (final Display display : dimensionsCache.existingDisplays) {
 				// Append index
-				indexList.add(new Index(new ObjectArraySet<>(display.groups()), display.fileName()));
+				indexList.add(new Index(new ObjectArraySet<>(display.getGroups()), display.getFileName()));
 
 				// Append binary file
-				final ByteArrayWriter frameByteArrayWriter = new ByteArrayWriter(headerOffset + (dimensionsCache.existingDisplays.size() + 1) * Application.BYTES_PER_INT + imageByteArrayWriter.getRawOffset()); // include header, image count, and image offsets
-				display.frames().forEach(frame -> frameByteArrayWriter.write(frame.delayMicros(), getImageBytes(frame.pixels())));
-				imageByteArrayWriter.write(frameByteArrayWriter.getResult());
+				imageByteArrayWriter.write(display::getBinaryBytes);
 			}
 
 			// Write index file
@@ -92,12 +90,10 @@ public final class Aggregator {
 			}
 
 			// Write binary file
-			final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-			ByteArrayWriter.write32(outputStream, width);
-			ByteArrayWriter.write32(outputStream, height);
-			outputStream.writeBytes(imageByteArrayWriter.getResult());
-
-			try {
+			try (final ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+				ByteArrayWriter.write32(outputStream, width);
+				ByteArrayWriter.write32(outputStream, height);
+				outputStream.writeBytes(imageByteArrayWriter.getResult());
 				Files.write(binaryFile, outputStream.toByteArray(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 			} catch (IOException e) {
 				System.err.println(e.getMessage());
@@ -127,27 +123,6 @@ public final class Aggregator {
 		}
 
 		return newOutputDirectory;
-	}
-
-	private static byte[] getImageBytes(boolean[] pixels) {
-		final ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-
-		for (int i = 0; i < pixels.length; i += Application.BITS_PER_BYTE) {
-			int data = 0;
-			for (int j = 0; j < Application.BITS_PER_BYTE; j++) {
-				if (i + j < pixels.length) {
-					data |= (pixels[i + j] ? 1 : 0) << j;
-				}
-			}
-			byteArrayOutputStream.write(data);
-		}
-
-		try {
-			return PackBits.compress(byteArrayOutputStream.toByteArray());
-		} catch (IOException e) {
-			System.err.println(e.getMessage());
-			return new byte[0];
-		}
 	}
 
 	private record DimensionsCache(ObjectLinkedOpenHashSet<Display> existingDisplays, FileWriter fileWriter) {

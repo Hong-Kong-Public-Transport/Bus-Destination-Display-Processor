@@ -19,8 +19,8 @@ import java.util.function.Consumer;
 @AllArgsConstructor
 public abstract class FileProcessorBase {
 
-	private final ObjectArrayList<String> groups;
-	private final String fileName;
+	protected final ObjectArrayList<String> groups;
+	protected final String fileName;
 	private final byte[] rawImageBytes;
 
 	public final void process(Consumer<Display> callback) {
@@ -56,7 +56,7 @@ public abstract class FileProcessorBase {
 			if (imageFrames.isEmpty()) {
 				System.err.printf("No frames could be extracted from image [%s]%n", fileName);
 			} else {
-				callback.accept(new Display(groups, getOutputWidth(), getOutputHeight(), fileName, new ObjectImmutableList<>(imageFrames)));
+				callback.accept(getDisplay(new ObjectImmutableList<>(imageFrames)));
 			}
 		} catch (Exception e) {
 			System.err.printf("Failed to process image [%s] with FFmpeg: %s%n", fileName, e.getMessage());
@@ -73,7 +73,5 @@ public abstract class FileProcessorBase {
 	 */
 	protected abstract boolean[] convertTo1Bit(int width, int height, int[] pixels);
 
-	protected abstract int getOutputWidth();
-
-	protected abstract int getOutputHeight();
+	protected abstract Display getDisplay(ObjectImmutableList<ImageFrame> imageFrames);
 }

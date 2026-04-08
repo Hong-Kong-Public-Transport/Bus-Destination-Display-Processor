@@ -1,48 +1,44 @@
 package org.transport.service;
 
-import it.unimi.dsi.fastutil.ints.IntArrayList;
-import lombok.Getter;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.RequiredArgsConstructor;
 import org.transport.Application;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.function.IntFunction;
 
 @RequiredArgsConstructor
 public final class ByteArrayWriter {
 
-	@Getter
-	private int rawOffset;
-
 	private final int initialOffset;
-	private final IntArrayList offsets = new IntArrayList();
-	private final ByteArrayOutputStream dataStream = new ByteArrayOutputStream();
+	private final ObjectArrayList<IntFunction<byte[]>> writeDataList = new ObjectArrayList<>();
 
-	public void write(int header, byte[] data) {
-		write32(dataStream, header);
-		write(data);
-		rawOffset += Application.BYTES_PER_INT;
-	}
-
-	public void write(byte[] data) {
-		offsets.add(rawOffset);
-		dataStream.writeBytes(data);
-		rawOffset += data.length;
+	public void write(IntFunction<byte[]> writeData) {
+		writeDataList.add(writeData);
 	}
 
 	public byte[] getResult() {
-		final ByteArrayOutputStream resultStream = new ByteArrayOutputStream();
-		final int count = offsets.size();
-		write32(resultStream, count);
-		offsets.forEach(offset -> write32(resultStream, initialOffset + (count + 1) * Application.BYTES_PER_INT + offset));
+		try (final ByteArrayOutputStream resultStream = new ByteArrayOutputStream()) {
+			final int count = writeDataList.size();
+			write32(resultStream, count);
+			final int headerOffset = initialOffset + (count + 1) * Application.BYTES_PER_INT;
+			int offset = headerOffset;
+			final ObjectArrayList<byte[]> dataList = new ObjectArrayList<>();
 
-		try {
-			dataStream.writeTo(resultStream);
+			for (final IntFunction<byte[]> writeData : writeDataList) {
+				write32(resultStream, offset);
+				final byte[] data = writeData.apply(headerOffset);
+				offset += data.length;
+				dataList.add(data);
+			}
+
+			dataList.forEach(resultStream::writeBytes);
+			return resultStream.toByteArray();
 		} catch (IOException e) {
 			System.err.println(e.getMessage());
+			return new byte[0];
 		}
-
-		return resultStream.toByteArray();
 	}
 
 	public static void write32(ByteArrayOutputStream byteArrayOutputStream, int data) {
