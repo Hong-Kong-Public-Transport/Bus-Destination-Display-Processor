@@ -24,6 +24,7 @@ dependencies {
 	implementation "org.bytedeco:ffmpeg-platform:+"
 	implementation "org.bytedeco:javacv-platform:+"
 	implementation "org.jsoup:jsoup:+"
+	implementation "info.picocli:picocli:+"
 	compileOnly "org.projectlombok:lombok:+"
 	testImplementation "org.junit.jupiter:junit-jupiter-api:+"
 	testImplementation "org.junit.platform:junit-platform-launcher:+"

@@ -3,6 +3,7 @@ package org.transport;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.apache.commons.io.FileUtils;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.Loader;
 import org.bytedeco.opencv.global.opencv_core;
@@ -32,6 +33,7 @@ public abstract class BinaryFileTest {
 		Loader.load(opencv_core.class);
 		Loader.load(opencv_imgproc.class);
 		Loader.load(opencv_imgcodecs.class);
+		avutil.av_log_set_level(avutil.AV_LOG_WARNING);
 	}
 
 	protected abstract FileProcessorBase getFileProcessor(String fileName, byte[] rawImageBytes);
