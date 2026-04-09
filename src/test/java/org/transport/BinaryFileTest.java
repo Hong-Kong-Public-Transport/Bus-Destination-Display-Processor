@@ -44,7 +44,7 @@ public abstract class BinaryFileTest {
 		FileUtils.deleteQuietly(outputDirectory.toFile());
 		final Aggregator aggregator = new Aggregator(outputDirectory);
 		FileHelper.iterateDirectory(inputDirectory, path -> getFileProcessor(path.getFileName().toString(), Files.readAllBytes(path)).process(aggregator::add));
-		aggregator.aggregate();
+		aggregator.aggregate(true);
 
 		FileHelper.iterateDirectory(outputDirectory, innerDirectory -> {
 			final String[] directorySplit = innerDirectory.getFileName().toString().split("_");

@@ -20,6 +20,8 @@ public final class Application implements Runnable {
 	String[] rawUrls;
 	@CommandLine.Option(names = {"-o", "--output"}, required = true, description = "Output directory")
 	Path outputDirectory;
+	@CommandLine.Option(names = {"-c", "--clean"}, defaultValue = "true", description = "Clean output by deleting extra files")
+	boolean clean;
 
 	public static final String FILE_FORMAT = ".png";
 	public static final int BYTES_PER_INT = 4;
@@ -38,7 +40,7 @@ public final class Application implements Runnable {
 			new Parser(baseUri).parse((groups, fileName, rawImageBytes) -> new StandardFileProcessor(groups, fileName, rawImageBytes).process(aggregator::add));
 		}
 
-		aggregator.aggregate();
+		aggregator.aggregate(clean);
 	}
 
 	public static void main(String[] args) {

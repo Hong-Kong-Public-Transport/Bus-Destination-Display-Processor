@@ -50,13 +50,15 @@ public final class Aggregator {
 		}
 	}
 
-	public void aggregate() {
+	public void aggregate(boolean clean) {
 		if (mergedDisplays > 0) {
 			System.out.printf("Merged %s identical display(s)%n", mergedDisplays);
 		}
 
 		// Clean other directories
-		FileHelper.iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
+		if (clean) {
+			FileHelper.iterateDirectoryAndDelete(outputDirectory, path -> !outputDirectories.contains(path.getFileName().toString()));
+		}
 
 		displaysByDimensions.forEach((width, byteListForHeight) -> byteListForHeight.forEach((height, dimensionsCache) -> {
 			final Path imageDirectory = createImageDirectory(width, height);
@@ -65,7 +67,9 @@ public final class Aggregator {
 			final Path binaryFile = newOutputDirectory.resolve(BINARY_FILE);
 
 			// Clean main directory
-			FileHelper.iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
+			if (clean) {
+				FileHelper.iterateDirectoryAndDelete(newOutputDirectory, path -> !Files.isDirectory(path) && !path.equals(imageDirectory) && !path.equals(indexFile) && !path.equals(binaryFile));
+			}
 
 			// Create index list
 			final ObjectArrayList<Index> indexList = new ObjectArrayList<>();
@@ -100,7 +104,9 @@ public final class Aggregator {
 			}
 
 			// Delete extra files in image directory
-			dimensionsCache.fileWriter.cleanDirectory();
+			if (clean) {
+				dimensionsCache.fileWriter.cleanDirectory();
+			}
 		}));
 	}
 
