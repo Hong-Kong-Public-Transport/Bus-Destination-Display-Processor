@@ -19,6 +19,7 @@ dependencies {
 	implementation "com.fasterxml.jackson.core:jackson-databind:+"
 	implementation "org.apache.commons:commons-io:+"
 	implementation "org.apache.commons:commons-imaging:+"
+	implementation "de.siegmar:fastcsv:+"
 	implementation "org.jspecify:jspecify:+"
 	implementation "org.bytedeco:opencv-platform:+"
 	implementation "org.bytedeco:ffmpeg-platform:+"

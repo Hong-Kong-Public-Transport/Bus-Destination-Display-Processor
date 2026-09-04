@@ -20,14 +20,15 @@ import java.util.function.Consumer;
 public abstract class FileProcessorBase {
 
 	protected final ObjectArrayList<String> groups;
+	protected final boolean isCurrent;
 	protected final String fileName;
 	private final byte[] rawImageBytes;
 
 	public final void process(Consumer<Display> callback) {
 		try (
-				final ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(rawImageBytes);
-				final FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(byteArrayInputStream);
-				final Java2DFrameConverter frameConverter = new Java2DFrameConverter()
+			final ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(rawImageBytes);
+			final FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(byteArrayInputStream);
+			final Java2DFrameConverter frameConverter = new Java2DFrameConverter()
 		) {
 			grabber.start();
 			final ObjectArrayList<ImageFrame> imageFrames = new ObjectArrayList<>();

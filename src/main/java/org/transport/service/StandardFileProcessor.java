@@ -31,8 +31,8 @@ public final class StandardFileProcessor extends FileProcessorBase {
 
 	private static final int MAX_SMOOTH_AMOUNT = 5;
 
-	public StandardFileProcessor(ObjectArrayList<String> groups, String fileName, byte[] rawImageBytes) {
-		super(groups, fileName, rawImageBytes);
+	public StandardFileProcessor(ObjectArrayList<String> groups, boolean isCurrent, String fileName, byte[] rawImageBytes) {
+		super(groups, isCurrent, fileName, rawImageBytes);
 	}
 
 	@Override
@@ -53,7 +53,7 @@ public final class StandardFileProcessor extends FileProcessorBase {
 
 	@Override
 	protected Display getDisplay(ObjectImmutableList<ImageFrame> imageFrames) {
-		return imageFrames.size() == 1 ? new GenericImageDisplay(groups, width, height, fileName, imageFrames) : new StandardScrollDisplay(groups, width, height, fileName, imageFrames);
+		return imageFrames.size() == 1 ? new GenericImageDisplay(groups, isCurrent, width, height, fileName, imageFrames) : new StandardScrollDisplay(groups, isCurrent, width, height, fileName, imageFrames);
 	}
 
 	/**
@@ -131,9 +131,9 @@ public final class StandardFileProcessor extends FileProcessorBase {
 		final int width = image.cols();
 		final int height = image.rows();
 		final Mat croppedImage = new Mat(
-				image,
-				axis ? Range.all() : new Range((int) Math.floor(height * 0.4), (int) Math.ceil(height * 0.6) + 1),
-				axis ? new Range((int) Math.floor(width * 0.4), (int) Math.ceil(width * 0.6) + 1) : Range.all()
+			image,
+			axis ? Range.all() : new Range((int) Math.floor(height * 0.4), (int) Math.ceil(height * 0.6) + 1),
+			axis ? new Range((int) Math.floor(width * 0.4), (int) Math.ceil(width * 0.6) + 1) : Range.all()
 		);
 
 		try {
@@ -254,10 +254,10 @@ public final class StandardFileProcessor extends FileProcessorBase {
 
 		final long maxFrequency = Collections.max(frequencyMap.values());
 		return frequencyMap.int2LongEntrySet()
-				.stream()
-				.filter(entry -> entry.getLongValue() == maxFrequency)
-				.mapToInt(Int2LongMap.Entry::getIntKey)
-				.findFirst()
-				.orElse(0);
+			.stream()
+			.filter(entry -> entry.getLongValue() == maxFrequency)
+			.mapToInt(Int2LongMap.Entry::getIntKey)
+			.findFirst()
+			.orElse(0);
 	}
 }

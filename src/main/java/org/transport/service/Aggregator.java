@@ -80,7 +80,7 @@ public final class Aggregator {
 
 			for (final Display display : dimensionsCache.existingDisplays) {
 				// Append index
-				indexList.add(new Index(new ObjectArraySet<>(display.getGroups()), display.getFileName()));
+				indexList.add(new Index(new ObjectArraySet<>(display.getGroups()), display.isCurrent(), display.getFileName()));
 
 				// Append binary file
 				imageByteArrayWriter.write(display::getBinaryBytes);

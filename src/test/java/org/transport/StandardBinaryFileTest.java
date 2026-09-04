@@ -16,6 +16,6 @@ public final class StandardBinaryFileTest extends BinaryFileTest {
 
 	@Override
 	protected FileProcessorBase getFileProcessor(String fileName, byte[] rawImageBytes) {
-		return new StandardFileProcessor(ObjectArrayList.of(), fileName, rawImageBytes);
+		return new StandardFileProcessor(ObjectArrayList.of(), true, fileName, rawImageBytes);
 	}
 }

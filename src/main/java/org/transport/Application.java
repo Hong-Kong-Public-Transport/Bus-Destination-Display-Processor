@@ -16,8 +16,8 @@ import java.nio.file.Path;
 @CommandLine.Command(name = "Bus Destination Display Processor", mixinStandardHelpOptions = true)
 public final class Application implements Runnable {
 
-	@CommandLine.Parameters(description = "URL address(es) to parse")
-	String[] rawUrls;
+	@CommandLine.Parameters(description = "CSV address(es) to parse")
+	String[] csvUrls;
 	@CommandLine.Option(names = {"-o", "--output"}, required = true, description = "Output directory")
 	Path outputDirectory;
 	@CommandLine.Option(names = {"-c", "--clean"}, defaultValue = "true", description = "Clean output by deleting extra files")
@@ -35,9 +35,9 @@ public final class Application implements Runnable {
 		avutil.av_log_set_level(avutil.AV_LOG_WARNING);
 		final Aggregator aggregator = new Aggregator(outputDirectory);
 
-		for (final String rawUrl : rawUrls) {
-			final URI baseUri = URI.create(rawUrl + (rawUrl.endsWith("/") ? "" : "/"));
-			new Parser(baseUri).parse((groups, fileName, rawImageBytes) -> new StandardFileProcessor(groups, fileName, rawImageBytes).process(aggregator::add));
+		for (final String csvUrl : csvUrls) {
+			final URI csvUri = URI.create(csvUrl);
+			new Parser(csvUri).parse((groups, isCurrent, fileName, rawImageBytes) -> new StandardFileProcessor(groups, isCurrent, fileName, rawImageBytes).process(aggregator::add));
 		}
 
 		aggregator.aggregate(clean);

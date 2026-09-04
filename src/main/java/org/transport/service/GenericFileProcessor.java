@@ -15,8 +15,8 @@ public final class GenericFileProcessor extends FileProcessorBase {
 	private int width;
 	private int height;
 
-	public GenericFileProcessor(ObjectArrayList<String> groups, String fileName, byte[] rawImageBytes) {
-		super(groups, fileName, rawImageBytes);
+	public GenericFileProcessor(ObjectArrayList<String> groups, boolean isCurrent, String fileName, byte[] rawImageBytes) {
+		super(groups, isCurrent, fileName, rawImageBytes);
 	}
 
 	@Override
@@ -45,6 +45,6 @@ public final class GenericFileProcessor extends FileProcessorBase {
 
 	@Override
 	protected Display getDisplay(ObjectImmutableList<ImageFrame> imageFrames) {
-		return imageFrames.size() == 1 ? new GenericImageDisplay(groups, width, height, fileName, imageFrames) : new GenericAnimatedDisplay(groups, width, height, fileName, imageFrames);
+		return imageFrames.size() == 1 ? new GenericImageDisplay(groups, isCurrent, width, height, fileName, imageFrames) : new GenericAnimatedDisplay(groups, isCurrent, width, height, fileName, imageFrames);
 	}
 }

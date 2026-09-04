@@ -15,6 +15,8 @@ public abstract class Display {
 	@Getter
 	private final ObjectArrayList<String> groups;
 	@Getter
+	private final boolean isCurrent;
+	@Getter
 	private final int width;
 	@Getter
 	private final int height;
@@ -24,8 +26,9 @@ public abstract class Display {
 	private final ObjectImmutableList<ImageFrame> frames;
 	private final DisplayType displayType;
 
-	public Display(ObjectArrayList<String> groups, int width, int height, String fileName, ObjectImmutableList<ImageFrame> frames, DisplayType displayType) {
+	public Display(ObjectArrayList<String> groups, boolean isCurrent, int width, int height, String fileName, ObjectImmutableList<ImageFrame> frames, DisplayType displayType) {
 		this.groups = groups;
+		this.isCurrent = isCurrent;
 		this.width = width;
 		this.height = height;
 		this.fileName = fileName;

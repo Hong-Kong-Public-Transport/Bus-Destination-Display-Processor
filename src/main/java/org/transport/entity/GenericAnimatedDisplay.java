@@ -9,8 +9,8 @@ import java.io.IOException;
 
 public final class GenericAnimatedDisplay extends Display {
 
-	public GenericAnimatedDisplay(ObjectArrayList<String> groups, int width, int height, String fileName, ObjectImmutableList<ImageFrame> frames) {
-		super(groups, width, height, fileName, frames, DisplayType.ANIMATED);
+	public GenericAnimatedDisplay(ObjectArrayList<String> groups, boolean isCurrent, int width, int height, String fileName, ObjectImmutableList<ImageFrame> frames) {
+		super(groups, isCurrent, width, height, fileName, frames, DisplayType.ANIMATED);
 	}
 
 	@Override
