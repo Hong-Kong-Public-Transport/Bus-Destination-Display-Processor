@@ -7,7 +7,6 @@ import lombok.AllArgsConstructor;
 import org.transport.Application;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -30,18 +29,21 @@ public final class Parser {
 	private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(10)).build();
 
 	public void parse(RawImageCallback callback) {
-		try (final InputStream inputStream = HTTP_CLIENT.send(
-			HttpRequest.newBuilder().uri(csvUri).GET().build(),
-			HttpResponse.BodyHandlers.ofInputStream()
-		).body(); final CsvReader<NamedCsvRecord> csvReader = CsvReader.builder().ofNamedCsvRecord(inputStream)) {
-			csvReader.forEach(namedCsvRecord -> {
-				final String route = namedCsvRecord.getField(ROUTE_HEADER);
-				final String destination = namedCsvRecord.getField(DESTINATION_HEADER).replace("<br>", " ");
-				final boolean isCurrent = namedCsvRecord.getField(OLD_HEADER).equals("0");
-				final String fileId = namedCsvRecord.getField(FILE_ID_HEADER);
-				final String fileName = cleanString(String.format("%s_%s", route, fileId.toLowerCase().replace("_", ""))) + Application.FILE_FORMAT;
-				getGoogleDriveImage(fileId, rawImageBytes -> callback.accept(ObjectArrayList.of(route, destination), isCurrent, fileName, rawImageBytes));
-			});
+		try {
+			final String data = HTTP_CLIENT.send(
+				HttpRequest.newBuilder().uri(csvUri).GET().build(),
+				HttpResponse.BodyHandlers.ofString()
+			).body();
+			try (final CsvReader<NamedCsvRecord> csvReader = CsvReader.builder().ofNamedCsvRecord(data)) {
+				csvReader.forEach(namedCsvRecord -> {
+					final String route = namedCsvRecord.getField(ROUTE_HEADER);
+					final String destination = namedCsvRecord.getField(DESTINATION_HEADER).replace("<br>", " ");
+					final boolean isCurrent = namedCsvRecord.getField(OLD_HEADER).equals("0");
+					final String fileId = namedCsvRecord.getField(FILE_ID_HEADER);
+					final String fileName = cleanString(String.format("%s_%s", route, fileId.toLowerCase().replace("_", ""))) + Application.FILE_FORMAT;
+					getGoogleDriveImage(fileId, rawImageBytes -> callback.accept(ObjectArrayList.of(route, destination), isCurrent, fileName, rawImageBytes));
+				});
+			}
 		} catch (IOException | InterruptedException e) {
 			throw new RuntimeException(e);
 		}
